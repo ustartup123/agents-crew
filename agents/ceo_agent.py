@@ -2,6 +2,7 @@
 agents/ceo_agent.py — CEO Persona and Graph Execution Logic
 """
 
+from typing import Optional
 from agents.base_agent import BaseAgent
 from tools.slack_tools import SLACK_TOOLS
 from tools.notion_tools import NOTION_TOOLS
@@ -25,13 +26,29 @@ class CEOAgent(BaseAgent):
     )
     tools = SLACK_TOOLS + NOTION_TOOLS + GITHUB_TOOLS
 
-    def execute_kickoff(self, idea: str, project_id: str, slack_channel: str) -> dict:
+    def execute_kickoff(self, idea: str, project_id: str, slack_channel: str, history: Optional[list[str]] = None) -> dict:
+        history_text = "\n".join(history) if history else "No previous clarifications."
+        
         prompt = f"""
 You are the CEO. A startup idea has arrived:
 
-"{idea}"
+Original Idea: "{idea}"
+
+Previous Clarifications:
+{history_text}
 
 Your tasks:
+Evaluate if the idea is actionable enough to assemble a team and create a PRD.
+Do you know the core problem being solved, the target users, and the primary functionality?
+
+If NO (you need more info):
+Respond with a JSON block containing a single clarifying question focused on the most critical missing detail.
+{{
+  "action": "ask",
+  "question": "What is the primary target audience for this app?"
+}}
+
+If YES (the idea is clear and actionable):
 1. Create a short project name (kebab-case, max 30 chars) for the GitHub repo and project tracking.
 2. Decide which team members are needed. ALWAYS include: product, dev, qa.
    Add cfo if the idea needs financial modeling. Add marketing and sales if it's a customer-facing product.
@@ -42,6 +59,7 @@ Your tasks:
 
 Respond with a JSON block (inside ```json ... ```) containing:
 {{
+  "action": "kickoff",
   "project_name": "my-saas-app",
   "agents_needed": ["product", "dev", "qa"],
   "github_repo_url": "https://github.com/...",

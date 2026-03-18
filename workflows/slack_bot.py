@@ -72,13 +72,39 @@ def _is_new_project(text: str) -> bool:
 
 def _handle_agent_task(agent_key: str, user_msg: str, channel: str, thread_ts: str):
     """Route to either a full project graph or a one-off agent response."""
+    checkpointer = get_checkpointer()
+    graph = build_project_graph(checkpointer)
+    config = {"configurable": {"thread_id": thread_ts}}
+
+    # Check if there is already an interrupted graph in this thread
+    try:
+        snapshot = graph.get_state(config)
+        if snapshot and snapshot.next and "wait_for_founder" in snapshot.next:
+            logger.info(f"Resuming project graph in thread {thread_ts}")
+            
+            # Update history
+            current_history = snapshot.values.get("idea_refinement_history", [])
+            new_history = current_history + [f"Founder: {user_msg}"]
+            graph.update_state(config, {"idea_refinement_history": new_history})
+            
+            # Resume Graph
+            try:
+                graph.invoke(None, config=config)
+                return
+            except Exception as e:
+                logger.error(f"Project graph resume error: {e}")
+                try:
+                    slack_reply_thread.invoke({"channel": channel, "thread_ts": thread_ts, "message": f"Resume error: {e}", "agent_name": "System"})
+                except Exception:
+                    pass
+                return
+    except Exception as e:
+        logger.error(f"Error checking project state: {e}")
+
     if agent_key == "ceo" and _is_new_project(user_msg):
         # Kick off a full project
-        project_id = f"project-{uuid.uuid4().hex[:8]}"
-        checkpointer = get_checkpointer()
-        graph = build_project_graph(checkpointer)
-
-        config = {"configurable": {"thread_id": project_id}}
+        project_id = thread_ts  # Use thread_ts as the project ID to keep continuity in the same thread
+        
         initial_state = {
             "project_id": project_id,
             "project_name": "",

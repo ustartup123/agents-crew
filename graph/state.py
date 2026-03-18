@@ -27,6 +27,8 @@ class ProjectState(TypedDict):
     project_id: str               # = LangGraph thread_id
     project_name: str             # short slug, also GitHub repo name
     idea: str                     # the original idea from the founder
+    idea_refinement_history: Annotated[list[str], operator.add]
+    waiting_on_founder: bool
 
     # ── Routing ──────────────────────────────────────────────────────────────
     phase: str                    # "routing" | "planning" | "development" | "qa" | "business" | "summary" | "done"

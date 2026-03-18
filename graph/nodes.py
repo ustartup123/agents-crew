@@ -64,8 +64,23 @@ def ceo_router_node(state: ProjectState) -> dict:
     project_id = state["project_id"]
     
     agent = CEOAgent()
-    parsed = agent.execute_kickoff(idea, project_id, state.get("slack_channel", slack_cfg.channel_general))
+    parsed = agent.execute_kickoff(
+        idea, 
+        project_id, 
+        state.get("slack_channel", slack_cfg.channel_general),
+        history=state.get("idea_refinement_history", [])
+    )
 
+    action = parsed.get("action")
+    if action == "ask":
+        question = parsed.get("question")
+        _post_to_slack(state, agent.role, f"Founder, I need more info: {question}")
+        return {
+            "waiting_on_founder": True,
+            "idea_refinement_history": [f"CEO: {question}"]
+        }
+    
+    # Kickoff path
     kickoff_summary = parsed.get("kickoff_summary")
     if not kickoff_summary:
         parsed_str = str(parsed)
@@ -74,6 +89,7 @@ def ceo_router_node(state: ProjectState) -> dict:
     _post_to_slack(state, agent.role, kickoff_summary)
 
     return {
+        "waiting_on_founder": False,
         "phase": "planning",
         "project_name": parsed.get("project_name", project_id),
         "agents_needed": parsed.get("agents_needed", ["product", "dev", "qa"]),

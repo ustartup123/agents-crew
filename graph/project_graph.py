@@ -22,6 +22,16 @@ from graph.nodes import (
     cfo_node, marketing_node, sales_node, ceo_summary_node,
 )
 
+def wait_for_founder_input(state: ProjectState) -> dict:
+    """Dummy node that gets interrupted, waiting for founder to reply."""
+    return {}
+
+def _route_after_ceo(state: ProjectState) -> str:
+    """After CEO evaluation, either wait for founder or go to product."""
+    if state.get("waiting_on_founder"):
+        return "wait_for_founder"
+    return "product"
+
 
 def _route_after_product(state: ProjectState) -> str:
     """After Product runs, go to Dev."""
@@ -83,6 +93,7 @@ def build_project_graph(checkpointer):
 
     # Add nodes
     g.add_node("ceo_router", ceo_router_node)
+    g.add_node("wait_for_founder", wait_for_founder_input)
     g.add_node("product", product_node)
     g.add_node("dev", dev_node)
     g.add_node("qa", qa_node)
@@ -90,7 +101,11 @@ def build_project_graph(checkpointer):
 
     # Edges
     g.add_edge(START, "ceo_router")
-    g.add_edge("ceo_router", "product")
+    g.add_conditional_edges("ceo_router", _route_after_ceo, {
+        "wait_for_founder": "wait_for_founder",
+        "product": "product",
+    })
+    g.add_edge("wait_for_founder", "ceo_router")
     g.add_conditional_edges("product", _route_after_product, {"dev": "dev"})
     g.add_conditional_edges("dev", _route_after_dev, {"product": "product", "qa": "qa"})
     g.add_conditional_edges("qa", _route_after_qa, {
@@ -99,4 +114,4 @@ def build_project_graph(checkpointer):
     })
     g.add_edge("business_and_summary", END)
 
-    return g.compile(checkpointer=checkpointer)
+    return g.compile(checkpointer=checkpointer, interrupt_before=["wait_for_founder"])
