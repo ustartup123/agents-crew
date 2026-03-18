@@ -66,7 +66,12 @@ def ceo_router_node(state: ProjectState) -> dict:
     agent = CEOAgent()
     parsed = agent.execute_kickoff(idea, project_id, state.get("slack_channel", slack_cfg.channel_general))
 
-    _post_to_slack(state, agent.role, parsed.get("kickoff_summary", str(parsed)[:500]))
+    kickoff_summary = parsed.get("kickoff_summary")
+    if not kickoff_summary:
+        parsed_str = str(parsed)
+        kickoff_summary = parsed_str[:500]
+
+    _post_to_slack(state, agent.role, kickoff_summary)
 
     return {
         "phase": "planning",
@@ -75,7 +80,7 @@ def ceo_router_node(state: ProjectState) -> dict:
         "github_repo_url": parsed.get("github_repo_url", ""),
         "github_repo_name": parsed.get("github_repo_name", ""),
         "notion_task_db_id": parsed.get("notion_task_db_id", ""),
-        "messages": [_make_message("ceo", "team", parsed.get("kickoff_summary", ""), "update")],
+        "messages": [_make_message("ceo", "team", kickoff_summary or "", "update")],
     }
 
 

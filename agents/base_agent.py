@@ -50,8 +50,8 @@ class BaseAgent:
         agent = create_react_agent(self.llm, self.tools, state_modifier=system_prompt)
         try:
             result = agent.invoke({"messages": [("user", prompt_text)]})
-            ai_messages = [m for m in result.get("messages", []) if hasattr(m, "content") and m.type == "ai"]
-            output = ai_messages[-1].content if ai_messages else str(result)
+            ai_messages = [m for m in result.get("messages", []) if getattr(m, "type", "") == "ai"]
+            output = getattr(ai_messages[-1], "content", str(result)) if ai_messages else str(result)
             return self._parse_json(output)
         except Exception as e:
             logger.error(f"Agent execution error ({self.role}): {e}")
