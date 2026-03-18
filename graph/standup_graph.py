@@ -10,7 +10,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.prebuilt import create_react_agent
 
 from config.settings import gemini_cfg, slack_cfg, notion_cfg
-from agents.definitions import AGENT_PERSONAS
+from agents import AGENT_PERSONAS
 from tools.slack_tools import SLACK_TOOLS
 from tools.notion_tools import NOTION_TOOLS
 

@@ -18,7 +18,7 @@ from langgraph.prebuilt import create_react_agent
 from slack_bolt import App
 from slack_bolt.adapter.socket_mode import SocketModeHandler
 
-from agents.definitions import AGENT_PERSONAS
+from agents import AGENT_PERSONAS
 from config.settings import slack_cfg, gemini_cfg, app_cfg
 from graph.project_graph import build_project_graph
 from graph.checkpointer import get_checkpointer

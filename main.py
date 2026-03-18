@@ -23,7 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from config.settings import gemini_cfg, slack_cfg, notion_cfg, e2b_cfg, github_cfg, app_cfg
-from agents.definitions import AGENT_PERSONAS
+from agents import AGENT_PERSONAS
 from graph.project_graph import build_project_graph
 from graph.checkpointer import get_checkpointer
 from graph.standup_graph import run_daily_standup, run_weekly_review
