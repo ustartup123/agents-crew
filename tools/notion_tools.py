@@ -15,6 +15,7 @@ from langchain_core.tools import tool
 from notion_client import Client as NotionClient
 
 from config.settings import notion_cfg
+from tools.retry import retry
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,26 @@ def _get_client() -> NotionClient:
     if _client is None:
         _client = NotionClient(auth=notion_cfg.api_key)
     return _client
+
+
+@retry(max_retries=3, base_delay=1.0)
+def _create_page(**kwargs):
+    return _get_client().pages.create(**kwargs)
+
+
+@retry(max_retries=3, base_delay=1.0)
+def _append_blocks(**kwargs):
+    return _get_client().blocks.children.append(**kwargs)
+
+
+@retry(max_retries=3, base_delay=1.0)
+def _create_database(**kwargs):
+    return _get_client().databases.create(**kwargs)
+
+
+@retry(max_retries=3, base_delay=1.0)
+def _query_database(**kwargs):
+    return _get_client().databases.query(**kwargs)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -194,7 +215,7 @@ def notion_create_page(title: str, content: str = "", parent_page_id: str = "") 
                             "paragraph": {"rich_text": _rich_text(paragraph[i:i + 1900])},
                         })
 
-        page = _get_client().pages.create(
+        page = _create_page(
             parent={"page_id": parent_id},
             properties=_title_prop(title),
             children=children or None,
@@ -223,7 +244,7 @@ def notion_update_page(page_id: str, content: str) -> str:
                     "type": "paragraph",
                     "paragraph": {"rich_text": _rich_text(paragraph[:1900])},
                 })
-        _get_client().blocks.children.append(block_id=page_id, children=blocks)
+        _append_blocks(block_id=page_id, children=blocks)
         logger.info(f"Notion page updated: {page_id}")
         return json.dumps({"ok": True, "page_id": page_id})
     except Exception as e:
@@ -241,7 +262,7 @@ def notion_create_database(title: str, db_type: str = "tasks", parent_page_id: s
         parent_id = parent_page_id or notion_cfg.root_page_id
         schema = _DB_SCHEMAS.get(db_type, _DB_SCHEMAS["tasks"])
 
-        db = _get_client().databases.create(
+        db = _create_database(
             parent={"page_id": parent_id},
             title=_rich_text(title),
             properties=schema,
@@ -280,7 +301,7 @@ def notion_add_task(database_id: str, name: str, status: str = "To Do",
         if due_date:
             properties["Due Date"] = {"date": {"start": due_date}}
 
-        page = _get_client().pages.create(
+        page = _create_page(
             parent={"database_id": database_id},
             properties=properties,
         )
@@ -317,7 +338,7 @@ def notion_query_database(database_id: str, filter_status: str = "",
         elif len(filters) > 1:
             query_params["filter"] = {"and": filters}
 
-        resp = _get_client().databases.query(**query_params)
+        resp = _query_database(**query_params)
         results = []
         for page in resp.get("results", []):
             props = page.get("properties", {})

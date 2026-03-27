@@ -57,6 +57,7 @@ class ProjectState(TypedDict):
     vision_content: str
     prd_content: str
     arch_content: str
+    gtm_content: str              # Marketing GTM strategy content
 
     # ── Development ───────────────────────────────────────────────────────────
     github_repo_url: str
@@ -66,5 +67,70 @@ class ProjectState(TypedDict):
     qa_approved: bool
     qa_feedback: str              # bug report from QA to Dev (empty if approved)
 
+    # ── Founder control ───────────────────────────────────────────────────────
+    paused: bool                      # True when founder has paused the project
+    founder_feedback: Annotated[list[dict], operator.add]  # {"agent": "dev", "message": "...", "ts": "..."}
+
+    # ── Review gates ──────────────────────────────────────────────────────────
+    pending_review: Optional[dict]    # {"gate": "prd_review"|"code_review", "content_summary": "...", "approved": None|True|False}
+    review_rejection_reason: str      # Founder's rejection message, passed back to the agent
+
+    # ── Status tracking ───────────────────────────────────────────────────────
+    current_node: str                 # Name of the currently-executing node
+    node_started_at: str              # ISO timestamp when current node began
+    status_summary: str               # Human-readable one-liner set by each node
+
     # ── Error tracking ────────────────────────────────────────────────────────
     errors: Annotated[list[str], operator.add]
+
+
+def make_initial_state(
+    project_id: str,
+    idea: str,
+    slack_channel: str = "",
+    slack_thread_ts: str = "",
+) -> dict:
+    """Create a complete initial state dict with all ProjectState fields populated.
+
+    Using a single factory avoids the risk of main.py and slack_bot.py
+    drifting out of sync when new fields are added to ProjectState.
+    """
+    return {
+        "project_id": project_id,
+        "project_name": "",
+        "idea": idea,
+        "idea_refinement_history": [],
+        "waiting_on_founder": False,
+        "phase": "routing",
+        "agents_needed": [],
+        "messages": [],
+        "slack_channel": slack_channel,
+        "slack_thread_ts": slack_thread_ts,
+        "pending_clarification": None,
+        "code_iterations": 0,
+        "max_code_iterations": 3,
+        "qa_approved": False,
+        "qa_feedback": "",
+        "github_repo_url": "",
+        "github_repo_name": "",
+        "paused": False,
+        "founder_feedback": [],
+        "pending_review": None,
+        "review_rejection_reason": "",
+        "current_node": "",
+        "node_started_at": "",
+        "status_summary": "Project created, awaiting kickoff.",
+        "errors": [],
+        "notion_vision_url": "",
+        "notion_prd_url": "",
+        "notion_arch_url": "",
+        "notion_test_strategy_url": "",
+        "notion_financial_url": "",
+        "notion_gtm_url": "",
+        "notion_sales_url": "",
+        "notion_task_db_id": "",
+        "vision_content": "",
+        "prd_content": "",
+        "arch_content": "",
+        "gtm_content": "",
+    }

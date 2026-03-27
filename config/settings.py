@@ -18,7 +18,7 @@ def _env(key: str, default: str = "") -> str:
 @dataclass(frozen=True)
 class GeminiConfig:
     api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
-    model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-2.0-flash"))
+    model: str = field(default_factory=lambda: _env("GEMINI_MODEL", "gemini-3-flash-preview"))
     temperature: float = 0.7
 
 

@@ -24,6 +24,7 @@ def _build_llm():
         model=gemini_cfg.model,
         google_api_key=gemini_cfg.api_key,
         temperature=0.5,
+        include_thoughts=True,
     )
 
 
@@ -51,7 +52,7 @@ def run_daily_standup():
             f"Keep it to 3-5 bullet points total."
         )
         try:
-            agent = create_react_agent(llm, tools, state_modifier=system_prompt)
+            agent = create_react_agent(llm, tools, prompt=system_prompt)
             agent.invoke({"messages": [("user", prompt)]})
         except Exception as e:
             logger.error(f"Standup error for {agent_key}: {e}")
@@ -66,7 +67,7 @@ def run_daily_standup():
         f"under root page {notion_cfg.root_page_id})."
     )
     try:
-        agent = create_react_agent(llm, tools, state_modifier=ceo_system)
+        agent = create_react_agent(llm, tools, prompt=ceo_system)
         agent.invoke({"messages": [("user", ceo_prompt)]})
     except Exception as e:
         logger.error(f"CEO standup synthesis error: {e}")
@@ -102,7 +103,7 @@ def run_weekly_review():
             f"Save a detailed version to Notion as '{persona['role']} Weekly Review — {today}'."
         )
         try:
-            agent = create_react_agent(llm, tools, state_modifier=system_prompt)
+            agent = create_react_agent(llm, tools, prompt=system_prompt)
             agent.invoke({"messages": [("user", prompt)]})
         except Exception as e:
             logger.error(f"Weekly review error for {agent_key}: {e}")
@@ -117,7 +118,7 @@ def run_weekly_review():
         f"Post a concise summary to Slack."
     )
     try:
-        agent = create_react_agent(llm, tools, state_modifier=ceo_system)
+        agent = create_react_agent(llm, tools, prompt=ceo_system)
         agent.invoke({"messages": [("user", ceo_prompt)]})
     except Exception as e:
         logger.error(f"CEO weekly synthesis error: {e}")

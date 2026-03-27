@@ -26,6 +26,7 @@ from config.settings import gemini_cfg, slack_cfg, notion_cfg, e2b_cfg, github_c
 from agents import AGENT_PERSONAS
 from graph.project_graph import build_project_graph
 from graph.checkpointer import get_checkpointer
+from graph.state import make_initial_state
 from graph.standup_graph import run_daily_standup, run_weekly_review
 from workflows.slack_bot import SlackBot
 from workflows.scheduler import TeamScheduler
@@ -39,6 +40,10 @@ logging.basicConfig(
     format="%(asctime)s | %(name)-25s | %(levelname)-7s | %(message)s",
     datefmt="%H:%M:%S",
 )
+# Quieten noisy third-party loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+logging.getLogger("urllib3").setLevel(logging.WARNING)
 logger = logging.getLogger("main")
 
 
@@ -119,28 +124,11 @@ def main():
         checkpointer = get_checkpointer()
         graph = build_project_graph(checkpointer)
         config = {"configurable": {"thread_id": project_id}}
-        initial_state = {
-            "project_id": project_id,
-            "project_name": "",
-            "idea": idea,
-            "phase": "routing",
-            "agents_needed": [],
-            "messages": [],
-            "slack_channel": slack_cfg.channel_general,
-            "slack_thread_ts": "",
-            "pending_clarification": None,
-            "code_iterations": 0,
-            "max_code_iterations": 3,
-            "qa_approved": False,
-            "qa_feedback": "",
-            "github_repo_url": "",
-            "github_repo_name": "",
-            "errors": [],
-            "notion_vision_url": "", "notion_prd_url": "", "notion_arch_url": "",
-            "notion_test_strategy_url": "", "notion_financial_url": "",
-            "notion_gtm_url": "", "notion_sales_url": "", "notion_task_db_id": "",
-            "vision_content": "", "prd_content": "", "arch_content": "",
-        }
+        initial_state = make_initial_state(
+            project_id=project_id,
+            idea=idea,
+            slack_channel=slack_cfg.channel_general,
+        )
 
         result = graph.invoke(initial_state, config=config)
         console.print("[bold green]Kickoff complete![/]")
@@ -174,6 +162,17 @@ def main():
 
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
+
+    # Recover active projects from the checkpointer
+    try:
+        from graph.project_registry import rebuild_from_checkpointer
+        checkpointer = get_checkpointer()
+        graph = build_project_graph(checkpointer)
+        recovered = rebuild_from_checkpointer(graph, checkpointer)
+        if recovered:
+            console.print(f"[dim]Recovered {recovered} active project(s) from database[/dim]")
+    except Exception as e:
+        logger.warning(f"Project recovery failed: {e}")
 
     if not args.schedule_only:
         console.print("[bold]Starting Slack bot...[/]")

@@ -14,12 +14,26 @@ from langchain_core.tools import tool
 from github import Github, GithubException
 
 from config.settings import github_cfg
+from tools.retry import retry
 
 logger = logging.getLogger(__name__)
 
 
+_client: Github | None = None
+
+
 def _get_client() -> Github:
-    return Github(github_cfg.token)
+    """Return a cached GitHub client instance."""
+    global _client
+    if _client is None:
+        _client = Github(github_cfg.token)
+    return _client
+
+
+@retry(max_retries=3, base_delay=1.0, retryable_exceptions=(GithubException,))
+def _github_call(fn, *args, **kwargs):
+    """Call a GitHub API function with retry."""
+    return fn(*args, **kwargs)
 
 
 @tool
@@ -30,7 +44,8 @@ def github_create_repo(name: str, description: str = "") -> str:
     try:
         g = _get_client()
         user = g.get_user()
-        repo = user.create_repo(
+        repo = _github_call(
+            user.create_repo,
             name=name,
             description=description,
             private=github_cfg.default_private,

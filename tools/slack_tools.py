@@ -16,6 +16,7 @@ from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
 from config.settings import slack_cfg
+from tools.retry import retry
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +32,18 @@ def _get_client() -> WebClient:
     return _client
 
 
+@retry(max_retries=3, base_delay=1.0, retryable_exceptions=(SlackApiError,))
+def _post_message(**kwargs):
+    """Post a message with retry logic."""
+    return _get_client().chat_postMessage(**kwargs)
+
+
+@retry(max_retries=3, base_delay=1.0, retryable_exceptions=(SlackApiError,))
+def _fetch_history(**kwargs):
+    """Fetch conversation history with retry logic."""
+    return _get_client().conversations_history(**kwargs)
+
+
 # ── Tool: Send a message to a channel ────────────────────────────────────────
 
 @tool
@@ -39,7 +52,7 @@ def slack_send_message(channel: str, message: str, agent_name: str = "Agent") ->
     Args: channel (Slack channel ID e.g. C0123456789), message (text to send, supports mrkdwn), agent_name (name to prefix the message with)."""
     try:
         formatted = f"*[{agent_name}]*\n{message}"
-        resp = _get_client().chat_postMessage(channel=channel, text=formatted)
+        resp = _post_message(channel=channel, text=formatted)
         ts = resp["ts"]
         logger.info(f"Slack message sent to {channel} (ts={ts})")
         return json.dumps({"ok": True, "ts": ts, "channel": channel})
@@ -56,7 +69,7 @@ def slack_read_channel(channel: str, limit: int = 10) -> str:
     Args: channel (Slack channel ID), limit (max messages to fetch, default 10, max 50)."""
     try:
         limit = min(limit, 50)
-        resp = _get_client().conversations_history(channel=channel, limit=limit)
+        resp = _fetch_history(channel=channel, limit=limit)
         messages = []
         for msg in resp.get("messages", []):
             messages.append({
@@ -79,7 +92,7 @@ def slack_reply_thread(channel: str, thread_ts: str, message: str, agent_name: s
     Args: channel (Slack channel ID), thread_ts (timestamp of the parent message), message (reply text), agent_name (name to prefix the reply with)."""
     try:
         formatted = f"*[{agent_name}]*\n{message}"
-        resp = _get_client().chat_postMessage(
+        resp = _post_message(
             channel=channel,
             text=formatted,
             thread_ts=thread_ts,

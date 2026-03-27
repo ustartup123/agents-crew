@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 
 from langchain_core.tools import tool
 from e2b_code_interpreter import Sandbox
@@ -18,26 +19,30 @@ from config.settings import e2b_cfg
 logger = logging.getLogger(__name__)
 
 # Module-level sandbox instance — reused within a single agent node execution.
+# Protected by a lock to prevent multiple threads creating concurrent sandboxes.
 _active_sandbox: Sandbox | None = None
+_sandbox_lock = threading.Lock()
 
 
 def get_sandbox() -> Sandbox:
-    """Get or create the active E2B sandbox for this session."""
+    """Get or create the active E2B sandbox for this session (thread-safe)."""
     global _active_sandbox
-    if _active_sandbox is None:
-        _active_sandbox = Sandbox(api_key=e2b_cfg.api_key, timeout=300)
-    return _active_sandbox
+    with _sandbox_lock:
+        if _active_sandbox is None:
+            _active_sandbox = Sandbox(api_key=e2b_cfg.api_key, timeout=300)
+        return _active_sandbox
 
 
 def close_sandbox():
-    """Close and destroy the active sandbox."""
+    """Close and destroy the active sandbox (thread-safe)."""
     global _active_sandbox
-    if _active_sandbox is not None:
-        try:
-            _active_sandbox.kill()
-        except Exception as e:
-            logger.warning(f"Error closing sandbox: {e}")
-        _active_sandbox = None
+    with _sandbox_lock:
+        if _active_sandbox is not None:
+            try:
+                _active_sandbox.kill()
+            except Exception as e:
+                logger.warning(f"Error closing sandbox: {e}")
+            _active_sandbox = None
 
 
 @tool
