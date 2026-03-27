@@ -39,6 +39,7 @@ from graph.state import make_initial_state
 from graph.project_registry import (
     register_project, update_project, get_project,
     get_all_projects, get_all_products, get_project_by_name,
+    get_projects_context_summary,
 )
 from tools.slack_tools import SLACK_TOOLS, slack_reply_thread
 from tools.notion_tools import NOTION_TOOLS
@@ -123,6 +124,71 @@ def _is_new_project(text: str) -> bool:
 
 # ── Founder command handlers ─────────────────────────────────────────────────
 
+def _enrich_project_from_checkpointer(proj: dict) -> dict:
+    """Enrich a registry project dict with Notion URLs and other state from the checkpointer."""
+    try:
+        checkpointer = get_checkpointer()
+        graph = build_project_graph(checkpointer)
+        config = {"configurable": {"thread_id": proj["project_id"]}}
+        snapshot = graph.get_state(config)
+        if snapshot and snapshot.values:
+            vals = snapshot.values
+            for key in (
+                "notion_prd_url", "notion_financial_url", "notion_gtm_url",
+                "notion_sales_url", "notion_arch_url", "notion_vision_url",
+                "notion_task_db_id", "github_repo_url", "github_repo_name",
+                "code_iterations", "qa_approved",
+            ):
+                if vals.get(key) and not proj.get(key):
+                    proj[key] = vals[key]
+            # Update status fields if checkpointer has fresher data
+            if vals.get("status_summary"):
+                proj["status_summary"] = vals["status_summary"]
+            if vals.get("current_node"):
+                proj["current_node"] = vals["current_node"]
+            if vals.get("phase"):
+                proj["phase"] = vals["phase"]
+    except Exception:
+        pass  # Graceful fallback — show what we have
+    return proj
+
+
+def _format_project_detail(proj: dict) -> str:
+    """Format a single project into a rich Slack status block."""
+    proj = _enrich_project_from_checkpointer(proj)
+    name = proj.get("project_name") or proj["project_id"][:12]
+    paused_tag = " :double_vertical_bar: *PAUSED*" if proj.get("paused") else ""
+
+    lines = [f"*Project: {name}*{paused_tag}"]
+    lines.append(f"> *Phase:* `{proj.get('current_node', '?')}`")
+    lines.append(f"> *Status:* {proj.get('status_summary', 'Unknown')}")
+    lines.append(f"> *Started:* {proj.get('started_at', '?')[:19]}")
+    lines.append(f"> *Idea:* {proj.get('idea', '')[:200]}")
+
+    # Links section
+    links = []
+    if proj.get("github_repo_url"):
+        links.append(f"<{proj['github_repo_url']}|GitHub>")
+    if proj.get("notion_prd_url"):
+        links.append(f"<{proj['notion_prd_url']}|PRD>")
+    if proj.get("notion_financial_url"):
+        links.append(f"<{proj['notion_financial_url']}|Financial Plan>")
+    if proj.get("notion_gtm_url"):
+        links.append(f"<{proj['notion_gtm_url']}|GTM Strategy>")
+    if proj.get("notion_sales_url"):
+        links.append(f"<{proj['notion_sales_url']}|Sales Playbook>")
+    if proj.get("notion_arch_url"):
+        links.append(f"<{proj['notion_arch_url']}|Architecture>")
+    if links:
+        lines.append(f"> *Links:* {' · '.join(links)}")
+
+    if proj.get("code_iterations"):
+        qa_status = ":white_check_mark: Approved" if proj.get("qa_approved") else ":arrows_counterclockwise: In progress"
+        lines.append(f"> *Dev iterations:* {proj['code_iterations']} — QA: {qa_status}")
+
+    return "\n".join(lines)
+
+
 def _handle_status(say, thread_ts: str, project_name: Optional[str]):
     """Show status of all projects, or one specific project."""
     if project_name:
@@ -130,18 +196,7 @@ def _handle_status(say, thread_ts: str, project_name: Optional[str]):
         if not proj:
             say(text=f"No active project matching *{project_name}*.", thread_ts=thread_ts)
             return
-
-        paused_tag = " :double_vertical_bar: *PAUSED*" if proj.get("paused") else ""
-        say(
-            text=(
-                f"*Project: {proj.get('project_name', proj['project_id'])}*{paused_tag}\n"
-                f"> *Phase:* `{proj.get('current_node', '?')}`\n"
-                f"> *Status:* {proj.get('status_summary', 'Unknown')}\n"
-                f"> *Started:* {proj.get('started_at', '?')[:19]}\n"
-                f"> *Idea:* {proj.get('idea', '')[:200]}"
-            ),
-            thread_ts=thread_ts,
-        )
+        say(text=_format_project_detail(proj), thread_ts=thread_ts)
         return
 
     # All active projects
@@ -150,11 +205,14 @@ def _handle_status(say, thread_ts: str, project_name: Optional[str]):
         say(text="No active projects right now.", thread_ts=thread_ts)
         return
 
-    lines = ["*Active Projects:*\n"]
+    lines = [f"*Active Projects ({len(projects)}):*\n"]
     for p in projects:
+        p = _enrich_project_from_checkpointer(p)
         paused = " :double_vertical_bar: PAUSED" if p.get("paused") else ""
         name = p.get("project_name") or p["project_id"][:12]
-        lines.append(f"- *{name}*{paused} — `{p.get('current_node', '?')}` — {p.get('status_summary', '')}")
+        github = f" · <{p['github_repo_url']}|GitHub>" if p.get("github_repo_url") else ""
+        prd = f" · <{p['notion_prd_url']}|PRD>" if p.get("notion_prd_url") else ""
+        lines.append(f"- *{name}*{paused} — `{p.get('current_node', '?')}` — {p.get('status_summary', '')}{github}{prd}")
     say(text="\n".join(lines), thread_ts=thread_ts)
 
 
@@ -165,12 +223,12 @@ def _handle_products(say, thread_ts: str):
         say(text="No products yet. Start a project to create your first product!", thread_ts=thread_ts)
         return
 
-    lines = ["*All Products:*\n"]
+    lines = [f"*All Products ({len(all_prods)}):*\n"]
     for p in all_prods:
+        p = _enrich_project_from_checkpointer(p)
         name = p.get("project_name") or p["project_id"][:12]
         phase = p.get("phase", p.get("current_node", "?"))
         idea = p.get("idea", "")[:100]
-        github = p.get("github_repo_url", "")
 
         if phase == "done" or p.get("current_node") == "done":
             status_icon = ":white_check_mark:"
@@ -185,8 +243,19 @@ def _handle_products(say, thread_ts: str):
         line = f"{status_icon} *{name}* — {status_text}"
         if idea:
             line += f"\n    _{idea}_"
-        if github:
-            line += f"\n    GitHub: {github}"
+
+        # Collect links
+        links = []
+        if p.get("github_repo_url"):
+            links.append(f"<{p['github_repo_url']}|GitHub>")
+        if p.get("notion_prd_url"):
+            links.append(f"<{p['notion_prd_url']}|PRD>")
+        if p.get("notion_financial_url"):
+            links.append(f"<{p['notion_financial_url']}|Financials>")
+        if p.get("notion_gtm_url"):
+            links.append(f"<{p['notion_gtm_url']}|GTM>")
+        if links:
+            line += f"\n    {' · '.join(links)}"
         lines.append(line)
 
     say(text="\n".join(lines), thread_ts=thread_ts)
@@ -656,11 +725,30 @@ def _handle_agent_task(agent_key: str, user_msg: str, channel: str, thread_ts: s
         )
         tools = SLACK_TOOLS + NOTION_TOOLS
 
-        system_prompt = f"You are the {persona['role']}. {persona['backstory']}"
+        # Ground the agent with real project data to prevent hallucinations
+        projects_context = get_projects_context_summary()
+
+        system_prompt = (
+            f"You are the {persona['role']}. {persona['backstory']}\n\n"
+            f"CRITICAL RULES — read before every response:\n"
+            f"1. NEVER invent, fabricate, or hallucinate projects, products, metrics, "
+            f"or data that do not exist in the real project registry below.\n"
+            f"2. If no projects exist, say so honestly. Do NOT make up examples.\n"
+            f"3. Only reference projects, repos, and documents that appear in the registry.\n"
+            f"4. Your backstory is fictional context for your persona — do NOT treat it as "
+            f"real company history. The ONLY real projects are listed below.\n"
+            f"5. When creating Notion pages, NEVER fabricate product names or portfolio data. "
+            f"Only document real projects from the registry.\n\n"
+            f"--- REAL PROJECT REGISTRY (source of truth) ---\n"
+            f"{projects_context}\n"
+            f"--- END REGISTRY ---"
+        )
         prompt = (
             f"You received this message from the founder: \"{user_msg}\"\n"
             f"Respond as the {persona['role']}. Take action if needed. "
-            f"Post your response to Slack channel {channel} in thread {thread_ts}."
+            f"Post your response to Slack channel {channel} in thread {thread_ts}.\n"
+            f"Base your answer ONLY on real data from the project registry above. "
+            f"If you don't have the information, say so — never guess or fabricate."
         )
 
         agent = create_react_agent(llm, tools, prompt=system_prompt)
@@ -799,23 +887,33 @@ class SlackBot:
                         if not projects:
                             respond("No active projects right now.")
                         else:
-                            lines = ["*Active Projects:*\n"]
+                            lines = [f"*Active Projects ({len(projects)}):*\n"]
                             for p in projects:
+                                p = _enrich_project_from_checkpointer(p)
                                 paused = " :double_vertical_bar: PAUSED" if p.get("paused") else ""
                                 name = p.get("project_name") or p["project_id"][:12]
-                                lines.append(f"- *{name}*{paused} — `{p.get('current_node', '?')}` — {p.get('status_summary', '')}")
+                                github = f" · <{p['github_repo_url']}|GitHub>" if p.get("github_repo_url") else ""
+                                prd = f" · <{p['notion_prd_url']}|PRD>" if p.get("notion_prd_url") else ""
+                                lines.append(f"- *{name}*{paused} — `{p.get('current_node', '?')}` — {p.get('status_summary', '')}{github}{prd}")
                             respond("\n".join(lines))
                     elif cmd_name == "products":
                         all_prods = get_all_products()
                         if not all_prods:
                             respond("No products yet.")
                         else:
-                            lines = ["*All Products:*\n"]
+                            lines = [f"*All Products ({len(all_prods)}):*\n"]
                             for p in all_prods:
+                                p = _enrich_project_from_checkpointer(p)
                                 name = p.get("project_name") or p["project_id"][:12]
                                 done = p.get("current_node") == "done"
                                 icon = ":white_check_mark:" if done else ":arrows_counterclockwise:"
-                                lines.append(f"{icon} *{name}* — {p.get('idea', '')[:80]}")
+                                links = []
+                                if p.get("github_repo_url"):
+                                    links.append(f"<{p['github_repo_url']}|GitHub>")
+                                if p.get("notion_prd_url"):
+                                    links.append(f"<{p['notion_prd_url']}|PRD>")
+                                link_text = f" · {' · '.join(links)}" if links else ""
+                                lines.append(f"{icon} *{name}* — {p.get('idea', '')[:80]}{link_text}")
                             respond("\n".join(lines))
                     return
 

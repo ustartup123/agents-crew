@@ -82,6 +82,48 @@ def get_all_products() -> list[dict]:
     return all_projects
 
 
+def get_projects_context_summary() -> str:
+    """Return a grounded text summary of all real projects for agent context.
+
+    This prevents agents from hallucinating projects by giving them
+    the actual registry data to reference.
+    """
+    with _lock:
+        all_projects = list(_active_projects.values()) + list(_completed_projects.values())
+
+    if not all_projects:
+        return "CURRENT PROJECTS: None. No projects have been started yet."
+
+    lines = [f"CURRENT PROJECTS ({len(all_projects)} total):"]
+    for p in all_projects:
+        name = p.get("project_name") or p["project_id"][:12]
+        phase = p.get("phase", p.get("current_node", "unknown"))
+        idea = p.get("idea", "")[:150]
+        paused = " [PAUSED]" if p.get("paused") else ""
+        done = " [COMPLETED]" if phase == "done" or p.get("current_node") == "done" else ""
+
+        line = f"- {name}{paused}{done}: {idea}"
+        if p.get("github_repo_url"):
+            line += f"\n  GitHub: {p['github_repo_url']}"
+        if p.get("notion_prd_url"):
+            line += f"\n  PRD: {p['notion_prd_url']}"
+        if p.get("notion_financial_url"):
+            line += f"\n  Financial Plan: {p['notion_financial_url']}"
+        if p.get("notion_gtm_url"):
+            line += f"\n  GTM Strategy: {p['notion_gtm_url']}"
+        if p.get("notion_sales_url"):
+            line += f"\n  Sales: {p['notion_sales_url']}"
+        if p.get("status_summary"):
+            line += f"\n  Status: {p['status_summary']}"
+        if p.get("started_at"):
+            line += f"\n  Started: {p['started_at'][:10]}"
+        if p.get("completed_at"):
+            line += f"\n  Completed: {p['completed_at'][:10]}"
+        lines.append(line)
+
+    return "\n".join(lines)
+
+
 def get_project_by_name(name: str) -> Optional[dict]:
     """Fuzzy-match a project by name (case-insensitive substring). Checks active first, then completed."""
     name_lower = name.lower().strip()
@@ -132,8 +174,16 @@ def rebuild_from_checkpointer(graph, checkpointer) -> int:
                     paused=vals.get("paused", False),
                     phase=vals.get("phase", ""),
                     github_repo_url=vals.get("github_repo_url", ""),
+                    github_repo_name=vals.get("github_repo_name", ""),
                     notion_prd_url=vals.get("notion_prd_url", ""),
                     notion_gtm_url=vals.get("notion_gtm_url", ""),
+                    notion_financial_url=vals.get("notion_financial_url", ""),
+                    notion_sales_url=vals.get("notion_sales_url", ""),
+                    notion_arch_url=vals.get("notion_arch_url", ""),
+                    notion_vision_url=vals.get("notion_vision_url", ""),
+                    notion_task_db_id=vals.get("notion_task_db_id", ""),
+                    code_iterations=vals.get("code_iterations", 0),
+                    qa_approved=vals.get("qa_approved", False),
                 )
                 count += 1
             except Exception as e:
